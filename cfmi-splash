@@ -1,0 +1,4 @@
+#!/bin/bash
+#cat ~/bin/cfmi-splash-file
+echo -e "\r$(cat  ~/bin/cfmi-splash-file)"
+# That's all :)

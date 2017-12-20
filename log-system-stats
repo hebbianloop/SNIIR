@@ -1,0 +1,63 @@
+#!/bin/bash
+# todo ::
+# 		   * add help function
+#		   * get system usage for specific program (not whole system CPU)
+#			 - might not need a lock file in this case!
+# ------------------------------------------------------------------------------------------------------------
+# Option Parsing
+while :; do
+    case $1 in
+        -lockfile)
+			lockfile=$2			#lock file for program to be sampled
+			shift
+			;;	
+        -outfile)
+			logfile=$2			#name of log to be generated
+			shift
+			;;				
+		-program)
+			sample=$2 			#name of sampled program
+			shift
+			;;			
+        -?*)
+            printf 'WARN: Unknown option (ignored): %s\n' "$1" >&2
+            ;;
+        *)
+            break
+    esac
+    shift
+done
+# Generate Headers For Output Log
+echo -e "Sampled Progam  :: $sample\tTime Started    :: $(date)" > $logfile
+echo -e "Time(s)\tUserCPU\tSysCPU\tIdleCPU\tMUsed\tMFree\tMInactv" >> $logfile
+STARTTIMER=$(date +%s)
+while [ -f $lockfile ]; do
+	INCREMTIMER=$(date +%s)
+	# Calculate Free Memory
+	memfree=$(vm_stat | grep "Pages free: " | awk '{print $NF}' | tr -d '.')
+	memfree=$((memfree / 256000))
+	# Calculate Active Memory
+	memactive=$(vm_stat | grep "Pages active: " | awk '{print $NF}' | tr -d '.')
+	memactive=$((memactive / 256000))
+	# Calculate Inactive Memory
+	meminactive=$(vm_stat | grep "Pages inactive: " | awk '{print $NF}' | tr -d '.')
+	meminactive=$((meminactive / 256000))
+	# Calculate Speculative Memory
+	memspec=$(vm_stat | grep "Pages speculative: " | awk '{print $NF}' | tr -d '.')
+	memspec=$((memspec / 256000))	
+	# Calculate Wired Memory
+	memwired=$(vm_stat | grep "Pages wired down: " | awk '{print $NF}' | tr -d '.')
+	memwired=$((memwired / 256000))
+	# Calculate Memory Used
+	memused=$((memwired + memactive + memspec))
+	# Calculate System CPU Useage
+	syscpu=$(top -l 1 | grep "CPU usage: " | awk '{print $5}')
+	# Calculate User CPU Useage
+	usercpu=$(top -l 1 | grep "CPU usage: " | awk '{print $3}')
+	# Calculate Idle CPU Usage
+	idlecpu=$(top -l 1 | grep "CPU usage: " | awk '{print $7}')
+	# Print
+	printf "%i\t%s\t%s\t%s\t%i\t%i\t%i\n" $((INCREMTIMER - STARTTIMER)) $usercpu $syscpu $idlecpu $memused $memfree $meminactive >> $logfile
+	sleep 30
+done
+echo -e "\nTime Ended     :: $(date)" >> $logfile

@@ -1,0 +1,10 @@
+#!/bin/bash
+#
+# Compress NIFTI files
+#
+# TODO :: add option parsing
+#      :: add pattern (dont convert all files!)
+
+[ ! $(which brew) ] && /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+[ ! $(which parallel) ] && brew install parallel
+parallel -k --link --bar gzip -v {} ::: $(find . -type f -name *.nii)

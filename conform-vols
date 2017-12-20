@@ -1,0 +1,102 @@
+#!/bin/bash
+#
+#  Resample & Reorient Images to Common Space
+
+#default arguments
+template='foo.nii'
+image='bar.nii'
+# ------------------------------------------------------------------------------------------------------------
+# Help Function
+show_help() {
+cat <<EOF
+
+    Usage  ::  ${0##*/} [-h|--help] [-t|--template FILE] [-i|--image FILE]
+
+    Conform an Image to a Template's Space
+
+    	This program is a wrapper for the AFNI programs 3drefit & 3dresample. The input pair
+    	of images are checked for consistency in orientation, grid spacing and coordinate space.
+    	The second input image is conformed to the template's properties.
+
+EOF
+}
+# ------------------------------------------------------------------------------------------------------------
+# Option Parsing
+while :; do
+    case $1 in
+        -h|--help)
+        show_help
+        exit 
+        ;;  
+        -t|--template)
+            if [ -n "$2" ]; then
+                template=$2
+                shift
+            else
+                echo "ERROR:  -t --template requires a non-empty option argument.\n" >&2
+                exit 
+            fi
+            ;;
+        -i|--image)
+            if [ -n "$2" ]; then
+                image=$2
+                shift
+            else
+                echo "ERROR:  -i --image requires a non-empty option argument.\n" >&2
+                exit 
+            fi
+            ;;                      
+        -?*)
+            printf 'WARN: Unknown option (ignored): %s\n' "$1" >&2
+            ;;
+        *)
+            break
+    esac
+
+    shift
+done
+# ------------------------------------------------------------------------------------------------------------
+# Display Input Arguments
+cat <<EOF
+
+
+🎛  Checking Images for Consistency
+
+		Template 		-- 		$template
+		Images  		--		$image
+
+	Image 2 will be copied to image 1 directory. All transforms will be done on copy.
+EOF
+# ------------------------------------------------------------------------------------------------------------
+# Make a copy and put in same directory as image 1, only work on copy
+templatedir=$(dirname $template)
+image2name=$(basename $image)
+cp $image2 $image1dir/$image2name
+image2=$image1dir/$image2name
+# ------------------------------------------------------------------------------------------------------------
+# Check Orientation & Resolution (grid spacing)
+image1dim=$(3dinfo $image1 2>/dev/null | grep -o ':[0-9*]\{1,3\},[0-9]\{1,3\},[0-9]\{1,3\}')
+image2dim=$(3dinfo $image2 2>/dev/null | grep -o ':[0-9*]\{1,3\},[0-9]\{1,3\},[0-9]\{1,3\}')
+if [ ! "$image1dim" = "$image2dim" ]; then
+	echo -e "\n\n 🔧 Conforming Orientation & Dimensions of Image 2 to Image 1"
+	3dresample -master $image1 -inset $image2 -prefix $image1dir/conformed_$image2name 
+else
+	echo -e " \n\n✅ Images are orientation and dimension consistent"
+fi
+echo -e "\n\t\t Image 1$image1dim"
+echo -e "\n\t\t Image 2$image2dim"
+# ------------------------------------------------------------------------------------------------------------
+# Check Space
+image1space=$(3dinfo $image1 2> /dev/null | grep Template)
+image1space=${image1space##*:}
+image2space=$(3dinfo $image1dir/conformed_$image2name 2> /dev/null | grep Template)
+image2space=${image2space##*:}
+if [ "$image1space" = "$image2space" ]; then
+	echo -e " \n\n✅ Images are in the same space - $image1space $image2space\n\n"
+else
+	echo -e "\n ⚠️  Image is in conflicting space - $image1space, $image2space\n\n"
+	echo -e "\t📐  Warping Image to Template Space with AFNI's 3drefit"
+	3drefit -space $image1space $image1dir/conformed_$image2name 2> /dev/null 
+fi
+#
+##

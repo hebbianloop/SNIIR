@@ -1,0 +1,105 @@
+#!/bin/bash
+#
+#	Parallelized Batch Smoothing
+#		- take list of images and smooth them with GNU parallel
+#		- user specified parameters for GNU parallel
+#		- images may be masked prior to smoothing
+#		- fwhm specified as input
+
+# image files to be smoothed
+files=$(ls ./*.nii)
+# define mask to be used (default is brainmask)
+mask="$SPM_PATH/toolbox/FieldMap/brainmask.nii"
+# define stdv for kernel
+fwhm=6
+# default parallel options
+parstr="--progress"
+
+# ------------------------------------------------------------------------------------------------------------
+# Help Function
+show_help() {
+    cat <<EOF
+
+    Usage  ::  ${0##*/} [-h|--help] [-f|--files FILES] [-m|--mask] [-fwhm|--fwhm] [-po|--paropts STRING]
+
+    Input a batch of files for smoothing at a given FWHM kernel size.
+
+    	* All images are masked with the spm brainmask by default
+    	* User can specify a specific mask.. smoothing will only be done within the mask
+    	* Good practice recommends smoothing with a kernel size 2x the min voxel dimension.
+
+    Default settings assume SPM is installed and reference the brainmask.nii as the mask
+EOF
+}
+# ------------------------------------------------------------------------------------------------------------
+# Option Parsing
+while :; do
+    case $1 in
+        -h|--help)
+        show_help
+        exit 
+        ;;  
+        -f|--files)
+            if [ -n "$2" ]; then
+                files=$2
+                shift
+            else
+                echo "ERROR:  -f --files requires a non-empty option argument.\n" >&2
+                exit 
+            fi
+            ;;
+        -m|--mask)
+            if [ -n "$2" ]; then
+                mask=$2
+                shift
+            else
+                echo "ERROR:  -m --mask requires a non-empty option argument.\n" >&2
+                exit 
+            fi
+            ;;
+        -fwhm|--fwhm)
+            if [ -n "$2" ]; then
+                fwhm=$2
+                shift
+            else
+                echo "ERROR:  -fwhm --fwhm requires a non-empty option argument.\n" >&2
+                exit 
+            fi
+            ;;                          
+        -po|--paropts)
+            if [ -n "$2" ]; then
+                parstr=$2
+                shift
+            else
+                echo "ERROR:  -po --paropts requires a non-empty option argument.\n" >&2
+                exit 
+            fi
+            ;;                        
+        -?*)
+            printf 'WARN: Unknown option (ignored): %s\n' "$1" >&2
+            ;;
+        *)
+            break
+    esac
+
+    shift
+done
+# ------------------------------------------------------------------------------------------------------------
+if [ ! -f $mask ]; then
+    echo -e "\n ❗  ️ERROR  ❗️ cannot find mask :: $mask\n"
+    echo "..please specify the correct file"
+    exit
+fi
+# ------------------------------------------------------------------------------------------------------------
+# conform images to mask
+parallel $parstr conform-vols -i {} -t $mask ::: $files
+# ------------------------------------------------------------------------------------------------------------
+# get name of mask
+bmaskname=$(basename $mask)
+maskname=$(echo ${bmaskname%*.*})
+# convert fwhm to standard deviation
+std=$(echo "scale=6; $fwhm/2.3548" | bc -l)
+# smooth in parallel
+parallel $parstr fslmaths {} -mas {//}/$bmaskname -s $std -mas {//}/$bmaskname {//}/'s'$maskname'-'$fwhm'mm' ::: "$files"
+#
+##
