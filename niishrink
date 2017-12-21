@@ -9,4 +9,5 @@
 
 [ ! $(which brew) ] && /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 [ ! $(which parallel) ] && brew install parallel
-parallel -k --link --bar gzip {} ::: $(find . -type f -name *.nii)
+
+parallel -k --link --bar gzip {} ::: $(find . -type f -name '*.nii')
