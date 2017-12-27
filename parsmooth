@@ -7,28 +7,45 @@
 #		- fwhm specified as input
 
 # image files to be smoothed
-files=$(ls ./*.nii)
+files=$(find $(pwd) -type f -name '*.nii')
 # define mask to be used (default is brainmask)
 mask="$SPM_PATH/toolbox/FieldMap/brainmask.nii"
 # define stdv for kernel
 fwhm=6
 # default parallel options
-parstr="--progress"
+parstr="--bar -k --link --plus"
 
 # ------------------------------------------------------------------------------------------------------------
 # Help Function
 show_help() {
     cat <<EOF
 
-    Usage  ::  ${0##*/} [-h|--help] [-f|--files FILES] [-m|--mask] [-fwhm|--fwhm] [-po|--paropts STRING]
+    Usage  ::  ${0##*/} [-h|--help] [-f|--files FILES] [-m|--mask] [-fwhm|--fwhm]
 
-    Input a batch of files for smoothing at a given FWHM kernel size.
+    Smooth a list of masked NIFTI files in parallel. Very fast!
 
-    	* All images are masked with the spm brainmask by default
+    ⇢ Input  ::: a batch of files for smoothing at a given FWHM kernel size.
+    ⇠ Output ::: a batch of files smoothed within mask in same dir as input.
+
+    	* All images are masked with the SPM brainmask by default.
+          - Program will quit if SPMPATH variable is not defined and no mask is input.
+
     	* User can specify a specific mask.. smoothing will only be done within the mask
-    	* Good practice recommends smoothing with a kernel size 2x the min voxel dimension.
+          - This means the edges of the image will remain sharp (unsmoothed)
 
-    Default settings assume SPM is installed and reference the brainmask.nii as the mask
+        * The maximum number of threads will be used to smooth files in parallel
+          - Requires GNU Parallel to work. Will install if not present.
+          - This machine has $(nproc) threads.
+
+        * Every image in list is conformed to resolution and space of mask with 3dresample & 3drefit.
+    	
+        * HINT: Good practice recommends smoothing with a kernel size 2x the min voxel dimension.
+
+     This program is part of Shad's New & Improved Neuroimaging Repository!
+     --> see more at https://github.com/seldamat/SNIIR.git
+
+     $(parallel -V)
+
 EOF
 }
 # ------------------------------------------------------------------------------------------------------------
@@ -41,7 +58,7 @@ while :; do
         ;;  
         -f|--files)
             if [ -n "$2" ]; then
-                files=$2
+                files="${2}"
                 shift
             else
                 echo "ERROR:  -f --files requires a non-empty option argument.\n" >&2
@@ -81,9 +98,14 @@ while :; do
         *)
             break
     esac
-
     shift
 done
+# -----------------------------------------------------------------------------------------------------------
+# Check-Install Dependencies
+[ ! $(which brew) ] && [ uname -a | awk '{print $1}' = 'Darwin' ] && /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+[ ! $(which parallel) ] && [ $(uname -a | awk '{print $1}') = 'Darwin' ] && brew install parallel
+[ ! $(which parallel) ] && [ $(uname -a | awk '{print $1}') = 'Linux' ] && apt-get parallel
+[ ! $(which parallel) ] && echo 'GNU Parallel Does Not Exist on This System... exiting..' && exit
 # ------------------------------------------------------------------------------------------------------------
 if [ ! -f $mask ]; then
     echo -e "\n ❗  ️ERROR  ❗️ cannot find mask :: $mask\n"
@@ -91,15 +113,29 @@ if [ ! -f $mask ]; then
     exit
 fi
 # ------------------------------------------------------------------------------------------------------------
-# conform images to mask
-parallel $parstr conform-vols -i {} -t $mask ::: $files
+# check image properties for consistency
+#parallel $parstr conform-vols -t {1} -i {2} ::: $(echo ${files}) ::: $(echo ${mask})
 # ------------------------------------------------------------------------------------------------------------
-# get name of mask
-bmaskname=$(basename $mask)
-maskname=$(echo ${bmaskname%*.*})
-# convert fwhm to standard deviation
-std=$(echo "scale=6; $fwhm/2.3548" | bc -l)
-# smooth in parallel
-parallel $parstr fslmaths {} -mas {//}/$bmaskname -s $std -mas {//}/$bmaskname {//}/'s'$maskname'-'$fwhm'mm' ::: "$files"
+# Smoothing Operations
+### create new prefix for smoothed files
+prefix=$(echo ${files} | awk '{print $1}' | sed 's_/_ _g' | awk '{print $NF}' | sed 's/\./ /g' | awk '{print $1}')
+newprefix=$(echo $prefix | eval $(echo sed 's/'${prefix}'/'${fwhm}'mm.smoothed-'${prefix}'/'))
+### convert fwhm to standard deviation
+fwhm=$(echo "scale=6; ${fwhm}/2.3548" | bc -l)
+### make directories if they do not exist
+#parallel -k --link --bar \
+#	 $(echo dirname {}) \
+#	::: $(echo ${files})
+#	      exit
+### smooth in parallel
+parallel -k --link --bar --plus \
+	 echo fslmaths {1} \
+	 -mas ${mask} \
+	 -s ${fwhm} \
+	 -mas ${mask} \
+	 {1//}/{2/} \
+	 ::: $(echo ${files}) \
+	 ::: $(echo ${files} | eval $(echo sed 's/'${prefix}'/'${newprefix}'/g'))
 #
 ##
+parallel -V
