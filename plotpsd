@@ -41,7 +41,7 @@ Options
    -detrend  Remove linear trends from each voxel
    -highpass Apply standard FEAT high pass filtering (TR must be set) 
 _________________________________________________________________________
-\$Id: PlotPow.sh,v 1.4 2012/03/26 18:51:52 nichols Exp $
+\$Id: ${0##*/}, adapted from v 1.4 2012/03/26 18:51:52 nichols Exp $
 EOF
 exit
 }
@@ -111,12 +111,15 @@ Nvol=$(fslnvols "$Img")
 #
 ###############################################################################
 
+# Replace NaN with 0s
+fslmaths "$Img" -nan $Tmp-nonan
+
 # Compute mean
-fslmaths "$Img" -Tmean $Tmp-mean -odt float
+fslmaths $Tmp-nonan -Tmean $Tmp-mean -odt float
 
 # Create a mask on the fly?
 if [[ "$Mask" =~ ^[0-9]*$ ]] ; then
-    fslmaths "$Img" -thr "$Mask" -bin $Tmp-mask
+    fslmaths $Tmp-nonan -thr "$Mask" -bin $Tmp-mask
     Mask=$Tmp-mask
 fi
 
@@ -126,23 +129,23 @@ if [ "$Detrend" = "1" ] ; then
     for ((i=1;i<=Nvol;i++)) ; do 
 	echo $i >> $Tmp-reg
     done
-    fsl_glm -i "$Img" -d $Tmp-reg --out_res=$Tmp-Detrend -m $Mask --demean
+    fsl_glm -i $Tmp-nonan -d $Tmp-reg --out_res=$Tmp-Detrend -m $Mask --demean
     Img=$Tmp-Detrend
 fi
 
 # High pass?
 if [ "$HighPass" = "1" ] ; then
     HPsigma=$(echo 100/2/$TR | bc -l)
-    fslmaths "$Img" -bptf "$HPsigma" -1 $Tmp-HPf
+    fslmaths $Tmp-nonan -bptf "$HPsigma" -1 $Tmp-HPf
     Img=$Tmp-HPf
 fi
 
 # Center and possibly variance normalize 
 if [ "$VolNorm" = "1" ] ; then
-    fslmaths "$Img" -Tstd $Tmp-sd -odt float
-    fslmaths "$Img" -sub $Tmp-mean -div $Tmp-sd -mas "$Mask" $Tmp-img -odt float 
+    fslmaths $Tmp-nonan -Tstd $Tmp-sd -odt float
+    fslmaths $Tmp-nonan -sub $Tmp-mean -div $Tmp-sd -mas "$Mask" $Tmp-img -odt float 
 else
-    fslmaths "$Img" -sub $Tmp-mean              -mas "$Mask" $Tmp-img -odt float 
+    fslmaths $Tmp-nonan -sub $Tmp-mean              -mas "$Mask" $Tmp-img -odt float 
 fi
 
 # Compute power spectrum... the slow part
